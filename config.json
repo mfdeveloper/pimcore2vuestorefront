@@ -1,0 +1,39 @@
+{
+    "elasticsearch": {
+        "host": "",
+        "indexName": "vue_storefront_catalog"
+    },
+    "woocommerce": {
+        "url": "http://localhost/:8000/",
+        "consumerKey": "ck_061910813b5598aabad4a8a6d6d0d84b5744e5e2",
+        "consumerSecret": "cs_c5be36e4023dd9f45ec95238e6037ac06a19ce13",
+        "wpApi": true,
+        "downloadImages": true,
+        "version": "wc/v2"
+    },
+    "pimcore": {
+        "url": "http://localhost/",
+        "locale": "en_GB",
+        "assetsPath": "../var/assets",
+        "apiKey": "<ENTER YOUR API KEY HERE>",
+        "downloadImages": true,
+        "rootCategoryId": 11148,
+        "productClass": {
+            "id": 12,
+            "name": "Product",
+            "map": {
+                "price": "price",
+                "name": "seoname",
+                "description": "description"
+            }
+          },
+          "categoryClass": {
+            "id": 14,
+            "name": "ProductCategory",
+            "map": {
+                "name": "name",
+                "description": "description"
+            }            
+          }
+    }
+}

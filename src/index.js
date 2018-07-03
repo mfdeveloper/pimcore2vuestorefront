@@ -1,139 +1,141 @@
-const config = require('../config.json')
-const PimcoreApiClient = require('./lib/pimcore-api')
-const api = new PimcoreApiClient(config.pimcore)
+const config = require('../config.json');
+// const PimcoreApiClient = require('./lib/pimcore-api')
+const WooCommerceApi = require('woocommerce-api');
+const api = new WooCommerceApi(config.woocommerce); /* new PimcoreApiClient(config.pimcore) */
 
-const ProductImpoter = require('./importers/product')
-const BasicImporter = require('./importers/basic')
-const CategoryImpoter = require('./importers/category')
-const _ = require('lodash')
-const attribute = require('./lib/attribute')
+// const ProductImpoter = require('./importers/product')
+const WpProductImporter = require('./importers/wp-product');
+const BasicImporter = require('./importers/basic');
+const CategoryImpoter = require('./importers/category');
+const _ = require('lodash');
+const attribute = require('./lib/attribute');
 
-const promiseLimit = require('promise-limit')
-const limit = promiseLimit(3) // limit N promises to be executed at time
-const promise = require('./lib/promise') // right now we're using serial execution because of recursion stack issues
-const path = require('path')
-const shell = require('shelljs')
-const fs = require('fs')
-const jsonFile = require('jsonfile')
+const promiseLimit = require('promise-limit');
+const limit = promiseLimit(3); // limit N promises to be executed at time
+const promise = require('./lib/promise'); // right now we're using serial execution because of recursion stack issues
+const path = require('path');
+const shell = require('shelljs');
+const fs = require('fs');
+const jsonFile = require('jsonfile');
 
 
-let INDEX_VERSION = 1
-let INDEX_META_DATA
-const INDEX_META_PATH = path.join(__dirname, '../var/indexMetadata.json')
+let INDEX_VERSION = 1;
+let INDEX_META_DATA;
+const INDEX_META_PATH = path.join(__dirname, '../var/indexMetadata.json');
 
 const { spawn } = require('child_process');
 
-const es = require('elasticsearch')
+const es = require('elasticsearch');
 let client = new es.Client({ // as we're runing tax calculation and other data, we need a ES indexer
     host: config.elasticsearch.host,
     log: 'error',
     apiVersion: '5.5',
     requestTimeout: 10000
-})
+});
 
-const CommandRouter = require('command-router')
-const cli = CommandRouter()
+const CommandRouter = require('command-router');
+const cli = CommandRouter();
 
 cli.option({ name: 'offset'
 , alias: 'p'
 , default: 0
 , type: Number
-})
+});
 cli.option({ name: 'limit'
 , alias: 'l'
 , default: 25
 , type: Number
-})
+});
 
 cli.option({ name: 'switchPage'
 , alias: 's'
 , default: true
 , type: Boolean
-})
+});
 
 cli.option({ name: 'partitions'
 , alias: 't'
 , default: 20
 , type: Boolean
-})
+});
 
 cli.option({ name: 'runSerial'
 , alias: 'o'
 , default: false
 , type: Boolean
-})
+});
 
 function showWelcomeMsg() {
-    console.log('** CURRENT INDEX VERSION', INDEX_VERSION, INDEX_META_DATA.created)
+    console.log('** CURRENT INDEX VERSION', INDEX_VERSION, INDEX_META_DATA.created);
 }
 
 
 function readIndexMeta() {
-    let indexMeta = { version: 0, created: new Date(), updated: new Date() }
+    let indexMeta = { version: 0, created: new Date(), updated: new Date() };
 
     try {
-        indexMeta = jsonFile.readFileSync(INDEX_META_PATH)
+        indexMeta = jsonFile.readFileSync(INDEX_META_PATH);
     } catch (err){
-        console.log('Seems like first time run!', err.message)
+        console.log('Seems like first time run!', err.message);
     }
-    return indexMeta
+    return indexMeta;
 }
 
 function recreateTempIndex() {
 
-    let indexMeta = readIndexMeta()
+    let indexMeta = readIndexMeta();
 
     try { 
-        indexMeta.version ++
-        INDEX_VERSION = indexMeta.version
-        indexMeta.updated = new Date()
-        jsonFile.writeFileSync(INDEX_META_PATH, indexMeta)
+        indexMeta.version ++;
+        INDEX_VERSION = indexMeta.version;
+        indexMeta.updated = new Date();
+        jsonFile.writeFileSync(INDEX_META_PATH, indexMeta);
     } catch (err) {
-        console.error(err)
+        console.error(err);
     }
 
     let step2 = () => { 
         client.indices.create({ index: `${config.elasticsearch.indexName}_${INDEX_VERSION}` }).then(result=>{
-            console.log('Index Created', result)
-            console.log('** NEW INDEX VERSION', INDEX_VERSION, INDEX_META_DATA.created)
-        })
-    }
+            console.log('Index Created', result);
+            console.log('** NEW INDEX VERSION', INDEX_VERSION, INDEX_META_DATA.created);
+        });
+    };
 
 
     return client.indices.delete({
         index: `${config.elasticsearch.indexName}_${INDEX_VERSION}`
     }).then((result) => {
-        console.log('Index deleted', result)
-        step2()
+        console.log('Index deleted', result);
+        step2();
     }).catch((err) => {
-        console.log('Index does not exst')
-        step2()
-    })
+        console.log('Index does not exst');
+        step2();
+    });
 }
 
 function publishTempIndex() {
     let step2 = () => { 
         client.indices.putAlias({ index: `${config.elasticsearch.indexName}_${INDEX_VERSION}`, name: config.elasticsearch.indexName }).then(result=>{
-            console.log('Index alias created', result)
-        })
-    }
+            console.log('Index alias created', result);
+        });
+    };
 
 
     return client.indices.deleteAlias({
         index: `${config.elasticsearch.indexName}_${INDEX_VERSION-1}`,
         name: config.elasticsearch.indexName 
     }).then((result) => {
-        console.log('Public index alias deleted', result)
-        step2()
+        console.log('Public index alias deleted', result);
+        step2();
     }).catch((err) => {
-        console.log('Public index alias does not exists', err.message)
-        step2()
-    })  
+        console.log('Public index alias does not exists', err.message);
+        step2();
+    });  
 }
 
 function storeResults(singleResults, entityType) {
-    let fltResults = _.flattenDeep(singleResults)
-    let attributes = attribute.getMap()
+    let fltResults = _.flattenDeep(singleResults);
+    let attributes = attribute.getMap();
 
     fltResults.map((ent) => {
         client.index({
@@ -141,16 +143,16 @@ function storeResults(singleResults, entityType) {
             type: entityType,
             id: ent.dst.id,
             body: ent.dst
-        })                    
-    })
+        });                    
+    });
     Object.values(attributes).map((attr) => {
         client.index({
             index: `${config.elasticsearch.indexName}_${INDEX_VERSION}`,
             type: 'attribute',
             id: attr.id,
             body: attr
-        })                    
-    })                
+        });                    
+    });                
 }
 
 
@@ -162,36 +164,36 @@ function storeResults(singleResults, entityType) {
 function importListOf(entityType, importer, config, api, offset = 0, count = 100, recursive = true) {
 
     return new Promise((resolve, reject) => {
-        let entityConfig = config.pimcore[`${entityType}Class`]
+        let entityConfig = config.pimcore[`${entityType}Class`];
         if (!entityConfig) {
-            throw new Error(`No Pimcore class configuration for ${entityType}`)
+            throw new Error(`No Pimcore class configuration for ${entityType}`);
         }
 
         const query = { // TODO: add support for `limit` and `offset` paramters
             objectClass: entityConfig.name,
             offset: offset,
             limit: count
-        }
+        };
 
-        let generalQueue = []
-        console.log('*** Getting objects list for', query)
+        let generalQueue = [];
+        console.log('*** Getting objects list for', query);
         api.get('object-list').query(query).end((resp) => {
             
-            let queue = []
-            let index = 0
+            let queue = [];
+            let index = 0;
             for(let objDescriptor of resp.body.data) {
                 let promise = importer.single(objDescriptor).then((singleResults) => {
-                    storeResults(singleResults, entityType)
-                    console.log('* Record done for ', objDescriptor.id, index, count)
-                    index++
-                })
+                    storeResults(singleResults, entityType);
+                    console.log('* Record done for ', objDescriptor.id, index, count);
+                    index++;
+                });
                 if(cli.params.runSerial)
-                    queue.push(() => promise)
+                    queue.push(() => promise);
                 else
-                    queue.push(promise)
+                    queue.push(promise);
             }
             let resultParser = (results) => {
-                console.log('** Page done ', offset, resp.body.total)
+                console.log('** Page done ', offset, resp.body.total);
                 
                 if(resp.body.total === count)
                 {
@@ -202,115 +204,116 @@ function importListOf(entityType, importer, config, api, offset = 0, count = 100
                     }
 
                     if(recursive) {
-                        console.log('*** Switching page!')
-                        return importListOf(entityType, importer, config, api, offset += count, count) 
+                        console.log('*** Switching page!');
+                        return importListOf(entityType, importer, config, api, offset += count, count); 
                     } else {
                         return {
                             total: resp.body.total,
                             count: count,
                             offset: offset
-                        }
+                        };
                     }
                 }
-            }
+            };
             if(cli.params.runSerial)
-                promise.serial(queue).then(resultParser).then((res) => resolve(res)).catch((reason) => { console.error(reason); reject() })
+                promise.serial(queue).then(resultParser).then((res) => resolve(res)).catch((reason) => { console.error(reason); reject(); });
             else 
-                Promise.all(queue).then(resultParser).then((res) => resolve(res)).catch((reason) => { console.error(reason); reject() })
-        })
-    })
+                Promise.all(queue).then(resultParser).then((res) => resolve(res)).catch((reason) => { console.error(reason); reject(); });
+        });
+    });
 }
 // TODO: 
 //  2. Images server
 //  5. Add styles for color attributes like "white, black" etc 
 
 cli.command('products',  () => {
-   showWelcomeMsg()
+   showWelcomeMsg();
 
-   importListOf('product', new BasicImporter('product', new ProductImpoter(config, api, client), config, api, client), config, api, offset = cli.options.offset, count = cli.options.limit, recursive = false).then((result) => 
+   importListOf('product', new BasicImporter('product', new WpProductImporter(config, api, client), config, api, client), config, api, offset = cli.options.offset, count = cli.options.limit, recursive = false).then((result) => 
+//    importListOf('product', new BasicImporter('product', new ProductImpoter(config, api, client), config, api, client), config, api, offset = cli.options.offset, count = cli.options.limit, recursive = false).then((result) => 
    {
     if(cli.options.switchPage) {
             if(result && result.count === result.total) // run the next instance
             {
-                let cmd = `node index.js products --switchPage=true --offset=${result.offset+result.count} --limit=${cli.options.limit} --runSerial=${cli.options.runSerial}`
-                console.log('Starting cubprocess for the next page', cmd)
-                shell.exec(cmd)
+                let cmd = `node index.js products --switchPage=true --offset=${result.offset+result.count} --limit=${cli.options.limit} --runSerial=${cli.options.runSerial}`;
+                console.log('Starting cubprocess for the next page', cmd);
+                shell.exec(cmd);
             }
         }
     }).catch(err => {
-        console.error(err)
-    })
-})    
+        console.error(err);
+    });
+});    
 
 cli.command('taxrules',  () => {
-    showWelcomeMsg()
-    let taxRules = jsonFile.readFileSync('./importers/templates/taxrules.json')
+    showWelcomeMsg();
+    let taxRules = jsonFile.readFileSync('./importers/templates/taxrules.json');
     for(let taxRule of taxRules) {
         client.index({
             index: `${config.elasticsearch.indexName}_${INDEX_VERSION}`,
             type: 'taxrule',
             id: taxRule.id,
             body: taxRule
-        })             
+        });             
     }
 });
 
 cli.command('productsMultiProcess',  () => {
-    showWelcomeMsg()
+    showWelcomeMsg();
     for(let i = 0; i < cli.options.partitions; i++) { // TODO: support for dynamic count of products etc
         shell.exec(`node index.js products --offset=${i*cli.options.limit} --limit=${cli.options.limit} --switchPage=false > ../var/log/products_${i}.txt`, (code, stdout, stderr) => {
             console.log('Exit code:', code);
             console.log('Program stderr:', stderr);
-          })
+          });
     }
 });
 
 
 cli.command('new',  () => {
-    showWelcomeMsg()
-    recreateTempIndex()
+    showWelcomeMsg();
+    recreateTempIndex();
 });
 
 
 cli.command('publish',  () => {
-    showWelcomeMsg()
-    publishTempIndex()
+    showWelcomeMsg();
+    publishTempIndex();
 });
 
 
 cli.command('categories',  () => { 
-    showWelcomeMsg()
-    let importer = new BasicImporter('category', new CategoryImpoter(config, api, client), config, api, client) // ProductImporter can be switched to your custom data mapper of choice
+    showWelcomeMsg();
+    let importer = new BasicImporter('category', new CategoryImpoter(config, api, client), config, api, client); // ProductImporter can be switched to your custom data mapper of choice
     importer.single({ id: config.pimcore.rootCategoryId }, level = 1, parent_id = 1).then((results) => {
-        let fltResults = _.flattenDeep(results)
-        storeResults(fltResults, 'category')
-     })});
+        let fltResults = _.flattenDeep(results);
+        storeResults(fltResults, 'category');
+     });});
 
 /**
  * Download asset and return the meta data as a JSON 
  */
 cli.command('asset', () => {
     if(!cli.options.id) {
-        console.log(JSON.stringify({ status: -1, message: 'Please provide asset Id' }))
-        process.exit(-1)
+        console.log(JSON.stringify({ status: -1, message: 'Please provide asset Id' }));
+        process.exit(-1);
     }
     api.get(`asset/id/${cli.options.id}`).end((resp) => {
         if(resp.body && resp.body.data) {
-            const imageName =  resp.body.data.filename
-            const imageRelativePath = resp.body.data.path
-            const imageAbsolutePath = path.join(config.pimcore.assetsPath, imageRelativePath, imageName)
+            const imageName =  resp.body.data.filename;
+            const imageRelativePath = resp.body.data.path;
+            const imageAbsolutePath = path.join(config.pimcore.assetsPath, imageRelativePath, imageName);
             
-            shell.mkdir('-p', path.join(config.pimcore.assetsPath, imageRelativePath))
-            fs.writeFileSync(imageAbsolutePath, Buffer.from(resp.body.data.data, 'base64'))
-            console.log(JSON.stringify({ status: 0, message: 'Image downloaded!', absolutePath: imageAbsolutePath, relativePath: path.join(imageRelativePath, imageName) }))
+            shell.mkdir('-p', path.join(config.pimcore.assetsPath, imageRelativePath));
+            fs.writeFileSync(imageAbsolutePath, Buffer.from(resp.body.data.data, 'base64'));
+            console.log(JSON.stringify({ status: 0, message: 'Image downloaded!', absolutePath: imageAbsolutePath, relativePath: path.join(imageRelativePath, imageName) }));
         }
-    })    
-})
+    });    
+});
 
 cli.on('notfound', (action) => {
-  console.error('I don\'t know how to: ' + action)
-  process.exit(1)
-})
+  console.error('I don\'t know how to: ' + action);
+  process.exit(1);
+});
   
   
 process.on('unhandledRejection', (reason, p) => {
@@ -325,8 +328,8 @@ process.on('uncaughtException', function (exception) {
 });
   
 
-INDEX_META_DATA = readIndexMeta()
-INDEX_VERSION = INDEX_META_DATA.version
+INDEX_META_DATA = readIndexMeta();
+INDEX_VERSION = INDEX_META_DATA.version;
  
   // RUN
 cli.parse(process.argv);
@@ -335,32 +338,33 @@ cli.parse(process.argv);
 // FOR DEV/DEBUG PURPOSES
 
 cli.command('testcategory',  () => {
-    let importer = new BasicImporter('category', new CategoryImpoter(config, api, client), config, api, client) // ProductImporter can be switched to your custom data mapper of choice
+    let importer = new BasicImporter('category', new CategoryImpoter(config, api, client), config, api, client); // ProductImporter can be switched to your custom data mapper of choice
     importer.single({ id: 11148 }).then((results) => {
-        let fltResults = _.flattenDeep(results)
-        let obj = fltResults.find((it) => it.dst.id === 11148)
-        console.log('CATEGORIES', fltResults.length, obj, obj.dst.children_data)
-        console.log('ATTRIBUTES', attribute.getMap())
-        console.log('CO', obj.dst.configurable_options)
-     }).catch((reason) => { console.error(reason) })
+        let fltResults = _.flattenDeep(results);
+        let obj = fltResults.find((it) => it.dst.id === 11148);
+        console.log('CATEGORIES', fltResults.length, obj, obj.dst.children_data);
+        console.log('ATTRIBUTES', attribute.getMap());
+        console.log('CO', obj.dst.configurable_options);
+     }).catch((reason) => { console.error(reason); });
  });
  
 
 cli.command('testproduct',  () => {
-   let importer = new BasicImporter('product', new ProductImpoter(config, api, client), config, api, client) // ProductImporter can be switched to your custom data mapper of choice
+   let importer = new BasicImporter('product', new WpProductImporter(config, api, client), config, api, client); // ProductImporter can be switched to your custom data mapper of choice
+//    let importer = new BasicImporter('product', new ProductImpoter(config, api, client), config, api, client)
    importer.single({ id: 1237 }).then((results) => {
-       let fltResults = _.flatten(results)
-       let obj = fltResults.find((it) => it.dst.id === 1237)
-       console.log('PRODUCTS', fltResults.length, obj, obj.dst.configurable_children)
-       console.log('ATTRIBUTES', attribute.getMap())
-       console.log('CO', obj.dst.configurable_options)
-    }).catch((reason) => { console.error(reason) })
+       let fltResults = _.flatten(results);
+       let obj = fltResults.find((it) => it.dst.id === 1237);
+       console.log('PRODUCTS', fltResults.length, obj, obj.dst.configurable_children);
+       console.log('ATTRIBUTES', attribute.getMap());
+       console.log('CO', obj.dst.configurable_options);
+    }).catch((reason) => { console.error(reason); });
 });
   
 // Using a single function to handle multiple signals
 function handle(signal) {
     console.log('Received  exit signal. Bye!');
-    process.exit(-1)
+    process.exit(-1);
   }
 process.on('SIGINT', handle);
 process.on('SIGTERM', handle);

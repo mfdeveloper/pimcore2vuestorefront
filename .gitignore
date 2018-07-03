@@ -23,3 +23,5 @@ var/log/products_8.txt
 var/assets/*
 var/log/assets/*
 var/indexMetadata.json
+node_modules/*
+dist/

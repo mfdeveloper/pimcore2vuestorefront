@@ -1,0 +1,24 @@
+{
+  "extends": "eslint:recommended",
+  "env": {
+    "node": true,
+    "es6": true
+  },
+  "parser": "babel-eslint",
+  "parserOptions": {
+    "sourceType": "module",
+    "allowImportExportEverywhere": false,
+    "codeFrame": false
+  },
+  "plugins": [
+    "babel"
+  ],
+  "rules": {
+    "babel/new-cap": "off",
+    "babel/no-invalid-this": "warn",
+    "babel/object-curly-spacing": "off",
+    "babel/quotes": "off",
+    "babel/semi": "error",
+    "babel/no-unused-expressions": "warn"
+  }
+}

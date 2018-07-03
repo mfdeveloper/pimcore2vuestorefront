@@ -1,15 +1,15 @@
 const _ = require('lodash');
-const fs = require('fs')
-const path = require('path')
-const shell = require('shelljs')
-const attribute = require('../lib/attribute')
+const fs = require('fs');
+const path = require('path');
+const shell = require('shelljs');
+const attribute = require('../lib/attribute');
 
 module.exports = class {
     constructor(config, api, db) {
-        this.config = config
-        this.db = db
-        this.api = api
-        this.single = this.single.bind(this)
+        this.config = config;
+        this.db = db;
+        this.api = api;
+        this.single = this.single.bind(this);
     }
 
     /**
@@ -18,25 +18,25 @@ module.exports = class {
      */
     single(pimcoreObjectData, convertedObject, childObjects, level = 1, parent_id = null) {
         return new Promise((resolve, reject) => {
-            console.log('Helo from custom category converter for', convertedObject.id)
-            convertedObject.url_key = pimcoreObjectData.key // pimcoreObjectData.path?
-            convertedObject.level = level
+            console.log('Helo from custom category converter for', convertedObject.id);
+            convertedObject.url_key = pimcoreObjectData.key; // pimcoreObjectData.path?
+            convertedObject.level = level;
             if (parent_id != null)
-                convertedObject.parent_id = parent_id
+                convertedObject.parent_id = parent_id;
             else
-                convertedObject.parent_id = pimcoreObjectData.parentId
+                convertedObject.parent_id = pimcoreObjectData.parentId;
 
-            let subPromises = []
+            let subPromises = [];
 
-            convertedObject.children_data = [] // clear the options
+            convertedObject.children_data = []; // clear the options
             if (childObjects && childObjects.length){
                 // here we're flattening the child array out, because it's specific to pimcore that children can have children here :)
 
-                let childObjectsFlattened = _.flattenDeep(childObjects)
+                let childObjectsFlattened = _.flattenDeep(childObjects);
 
                 for(let childObject of childObjectsFlattened) {
                     if(childObject.src.parentId === convertedObject.id) {
-                        console.log('Adding category child for ', convertedObject.name, convertedObject.id, childObject.dst.name)
+                        console.log('Adding category child for ', convertedObject.name, convertedObject.id, childObject.dst.name);
                         let confChild = {
                             name: childObject.dst.name,
                             id: childObject.dst.id,
@@ -44,17 +44,17 @@ module.exports = class {
                             is_active: true,
                             level: level + 1,
                             children_data: childObject.dst.children_data
-                        }
+                        };
                         
-                        convertedObject.children_data.push(confChild)
+                        convertedObject.children_data.push(confChild);
                     }
                 }
-                console.debug(' - Category children for: ', convertedObject.id,  convertedObject.children_data.length, convertedObject.children_data)
+                console.debug(' - Category children for: ', convertedObject.id,  convertedObject.children_data.length, convertedObject.children_data);
             }
             
             Promise.all(subPromises).then(results => {
-                resolve({ src: pimcoreObjectData, dst: convertedObject })
-            }).catch((reason) => { console.error(reason) })
-        })
+                resolve({ src: pimcoreObjectData, dst: convertedObject });
+            }).catch((reason) => { console.error(reason); });
+        });
     }
-}
+};

@@ -1,30 +1,37 @@
-'use strict'
+'use strict';
 
-const shell = require('shelljs')
-const mkdirp = require('mkdirp')
-const exists = require('fs-exists-sync')
-const inquirer = require('inquirer')
-const jsonFile = require('jsonfile')
-const urlParser = require('url-parse')
-const isWindows = require('is-windows')
-const isEmptyDir = require('empty-dir')
-const commandExists = require('command-exists')
+const shell = require('shelljs');
+const mkdirp = require('mkdirp');
+const exists = require('fs-exists-sync');
+const inquirer = require('inquirer');
+const jsonFile = require('jsonfile');
+const urlParser = require('url-parse');
+const isWindows = require('is-windows');
+const isEmptyDir = require('empty-dir');
+const commandExists = require('command-exists');
 const validUrl = require('valid-url');
-const path = require('path')
+const path = require('path');
 
-const PimcoreApiClient = require('./src/lib/pimcore-api')
-let api
+const PimcoreApiClient = require('./src/lib/pimcore-api');
+let api;
 
-const TARGET_CONFIG_FILE = 'config.json'
-const SOURCE_CONFIG_FILE = 'config.example.json'
+const TARGET_CONFIG_FILE = 'config.json';
+const SOURCE_CONFIG_FILE = 'config.example.json';
 
-const SELF_DIRECTORY = shell.pwd()
+const SELF_DIRECTORY = shell.pwd();
 
-const LOG_DIR = `${SELF_DIRECTORY}/var/log`
-const INSTALL_LOG_FILE = `${SELF_DIRECTORY}/var/log/install.log`
-const GENERAL_LOG_FILE = `${SELF_DIRECTORY}/var/log/general.log`
+const LOG_DIR = `${SELF_DIRECTORY}/var/log`;
+const INSTALL_LOG_FILE = `${SELF_DIRECTORY}/var/log/install.log`;
+const GENERAL_LOG_FILE = `${SELF_DIRECTORY}/var/log/general.log`;
 
-const Message = require('./src/lib/message.js')
+const Message = require('./src/lib/message.js');
+
+import { Answers } from './src/lib/answers';
+
+// const apis = {
+//   'woocommerce': WoocommerceApiClient,
+//   'pimcore': PimcoreApiClient
+// }
 
 /**
  * Abstract class for field initialization
@@ -36,7 +43,7 @@ class Abstract {
    * Initialize fields
    */
   constructor (answers) {
-    this.answers = answers
+    this.answers = answers;
   }
 }
 
@@ -52,36 +59,40 @@ class Pimcore extends Abstract {
    */
   createConfig () {
     return new Promise((resolve, reject) => {
-      let config
+      let config;
 
-      Message.info(`Creating pimcore config '${TARGET_CONFIG_FILE}'...`)
+      Message.info(`Creating pimcore config '${TARGET_CONFIG_FILE}'...`);
 
       try {
-        config = jsonFile.readFileSync(SOURCE_CONFIG_FILE)
+        config = jsonFile.readFileSync(SOURCE_CONFIG_FILE);
 
-        let backendPath
+        // let backendPath;
 
         const pimcoreClassFinder = function (className) {
-          return availablePimcoreClassess.find((itm) => { return itm.name === className })
-        }
-
-        config.elasticsearch.host = this.answers.elasticsearchUrl
-        config.elasticsearch.indexName = this.answers.elasticsearchIndexName
-        config.pimcore.url = this.answers.pimcoreUrl
-        config.pimcore.assetsPath = this.answers.assetsPath
-        config.pimcore.apiKey = this.answers.apiKey
-        config.pimcore.rootCategoryId = parseInt(this.answers.rootCategoryId)
-        config.pimcore.locale = this.answers.locale
-        config.pimcore.productClass = Object.assign(config.pimcore.productClass, pimcoreClassFinder(this.answers.productClass))
-        config.pimcore.categoryClass = Object.assign(config.pimcore.categoryClass, pimcoreClassFinder(this.answers.categoryClass))
+          return availablePimcoreClassess.find((itm) => { return itm.name === className; });
+        };
         
-        jsonFile.writeFileSync(TARGET_CONFIG_FILE, config, {spaces: 2})
+        config.eCommerceBackend = this.answers.eCommerceBackend.toLowerCase();
+
+        config.elasticsearch.host = this.answers.elasticsearchUrl;
+        config.elasticsearch.indexName = this.answers.elasticsearchIndexName;
+        config[config.eCommerceBackend].url = this.answers.apiUrl;
+        config[config.eCommerceBackend].assetsPath = this.answers.assetsPath;
+        config[config.eCommerceBackend].apiKey = this.answers.apiKey;
+        config[config.eCommerceBackend].rootCategoryId = parseInt(this.answers.rootCategoryId);
+        config[config.eCommerceBackend].locale = this.answers.locale;
+        config[config.eCommerceBackend].productClass = Object.assign(config.pimcore.productClass, pimcoreClassFinder(this.answers.productClass));
+        config[config.eCommerceBackend].categoryClass = Object.assign(config.pimcore.categoryClass, pimcoreClassFinder(this.answers.categoryClass));
+        
+        let options = exists(TARGET_CONFIG_FILE) ? {spaces: 2, flag: 'a'} : {spaces: 2};
+        
+        jsonFile.writeFileSync(TARGET_CONFIG_FILE, config, options);
       } catch (e) {
-        reject('Can\'t create storefront config.')
+        reject('Can\'t create storefront config.');
       }
 
-      resolve()
-    })
+      resolve();
+    });
   }
 
 
@@ -92,34 +103,34 @@ class Pimcore extends Abstract {
    */
   runImporter (answers) {
     return new Promise((resolve, reject) => {
-      Message.info('Starting Pimcore inporter ...')
+      Message.info('Starting Pimcore inporter ...');
 
-      let lastExecResult = null
-      shell.cd('src')
+      let lastExecResult = null;
+      shell.cd('src');
       if (shell.exec(`node index.js new`).code !== 0) {
-        reject('Can\'t create elasticsearch index.')
-        resolve(answers)
+        reject('Can\'t create elasticsearch index.');
+        resolve(answers);
       }
       if ((lastExecResult = shell.exec(`node index.js taxrules`)) && lastExecResult.code !== 0) {
-        reject('Can\'t import the taxrules')
-        resolve(answers)
+        reject('Can\'t import the taxrules');
+        resolve(answers);
       }      
       if ((lastExecResult = shell.exec(`node index.js categories`)) && lastExecResult.code !== 0) {
-        reject('Can\'t import the categories')
-        resolve(answers)
+        reject('Can\'t import the categories');
+        resolve(answers);
       }
       if ((lastExecResult = shell.exec(`node index.js products`)) && lastExecResult.code !== 0) {
-        reject('Can\'t import the products')
-        resolve(answers)
+        reject('Can\'t import the products');
+        resolve(answers);
       }
 
       if ((lastExecResult = shell.exec(`node index.js publish`)) && lastExecResult.code !== 0) {
-        reject('Can\'t publish the index')
-        resolve(answers)
+        reject('Can\'t publish the index');
+        resolve(answers);
       }
 
-      resolve(answers)
-    })
+      resolve(answers);
+    });
   }
 }
 
@@ -130,9 +141,9 @@ class Manager extends Abstract {
    * Assign backend and storefront entities
    */
   constructor (answers) {
-    super(answers)
+    super(answers);
 
-    this.pimcore = new Pimcore(answers)
+    this.pimcore = new Pimcore(answers);
   }
 
   /**
@@ -143,31 +154,31 @@ class Manager extends Abstract {
    */
   tryToCreateLogFiles () {
     return new Promise((resolve, reject) => {
-      Message.info('Trying to create log files...')
+      Message.info('Trying to create log files...');
 
       try {
-        mkdirp.sync(LOG_DIR, {mode: parseInt('0755', 8)})
+        mkdirp.sync(LOG_DIR, {mode: parseInt('0755', 8)});
 
         let logFiles = [
           INSTALL_LOG_FILE,
           GENERAL_LOG_FILE
-        ]
+        ];
 
         for (let logFile of logFiles) {
           if (shell.touch(logFile).code !== 0 || !exists(logFile)) {
-            throw new Error()
+            throw new Error();
           }
         }
 
-        Abstract.logsWereCreated = true
-        Abstract.infoLogStream = INSTALL_LOG_FILE
-        Abstract.logStream = GENERAL_LOG_FILE
+        Abstract.logsWereCreated = true;
+        Abstract.infoLogStream = INSTALL_LOG_FILE;
+        Abstract.logStream = GENERAL_LOG_FILE;
       } catch (e) {
-        Message.warning('Can\'t create log files.')
+        Message.warning('Can\'t create log files.');
       }
 
-      resolve()
-    })
+      resolve();
+    });
   }
 
   
@@ -178,7 +189,7 @@ class Manager extends Abstract {
    */
   initPimcore () {
     return this.pimcore.createConfig.bind(this.pimcore)()
-      .then(this.pimcore.runImporter.bind(this.pimcore))
+      .then(this.pimcore.runImporter.bind(this.pimcore));
   }
 
   /**
@@ -190,7 +201,7 @@ class Manager extends Abstract {
         'Unfortunately currently only Linux and OSX are supported.',
         'To install vue-storefront on your mac please go threw manual installation process provided in documentation:',
         `${STOREFRONT_GIT_URL}/blob/master/doc/Installing%20on%20Windows.md`
-      ])
+      ]);
     }
   }
 
@@ -201,7 +212,7 @@ class Manager extends Abstract {
     Message.greeting([
       'Hi, welcome to the pimcore2vuestorefront setup.',
       'Let\'s configure it together :)'
-    ])
+    ]);
   }
 
   /**
@@ -217,30 +228,32 @@ class Manager extends Abstract {
         'You\'ve just configured Pimcore -> VueStorefront integrator.',
         '',
         'Good Luck!'
-      ], true)
+      ], true);
 
-      resolve()
-    })
+      resolve();
+    });
   }
 }
 
 const urlFilter = function (url) {
-    let prefix = 'http://'
-    let prefixSsl = 'https://'
+    let prefix = 'http://';
+    let prefixSsl = 'https://';
 
-    url = url.trim()
+    url = url.trim();
 
     // add http:// if no protocol set
     if (url.substr(0, prefix.length) !== prefix && url.substr(0, prefixSsl.length) !== prefixSsl) {
-      url = prefix + url
+      url = prefix + url;
     }
 
     // add extra slash as suffix if was not set
-    return url.slice(-1) === '/' ? url : `${url}/`
-  }
+    return url.slice(-1) === '/' ? url : `${url}/`;
+  };
 
-let pimcoreUrl
-let availablePimcoreClassess
+let apiUrl;
+let availablePimcoreClassess;
+
+const answers = new Answers();
 
 /**
  * Here we configure questions
@@ -249,56 +262,107 @@ let availablePimcoreClassess
  */
 let questions = [
   {
+    type: 'list',
+    name: 'eCommerceBackend',
+    message: 'Which ecommerce backend platform do you want migrate?',
+    default: 'http://vue-catalog-pimcore.test.divante.pl/',
+    choices: ['Pimcore', 'Woocommerce'],
+    when: function (answers) {
+      return true;
+    }
+  },
+  {
     type: 'input',
-    name: 'pimcoreUrl',
-    message: 'Please provide Pimcore URL',
+    name: 'apiUrl',
+    message: 'Please provide an ecommerce backend API URL',
     filter: urlFilter,
     default: 'http://vue-catalog-pimcore.test.divante.pl/',
-    when: function (answers) {
-      return true
+    when: function () {
+      return true;
     },
-    validate: function (value) {
-      pimcoreUrl = value
+    validate: function (value, answers) {
+      apiUrl = value;
 
-    if (validUrl.isUri(value)){
-      return true
-    } 
-    else {
-      return 'Provide a valid Pimcore URI'
-    }
-
-      return true
+      if (validUrl.isUri(value)){
+        return true;
+      } 
+        
+      return `Provide a valid '${answers.eCommerceBackend}' backend URI`;
+    
     }
   },
   {
     type: 'input',
     name: 'apiKey',
-    message: 'Please provide valid Pimcore API Key',
+    message: 'Please provide valid API/Consumer Key',
     default: 'da6cb4a55ead8faffebcf5ed96ba2796536044247f08f37c49dd2dac84b67974',
-    when: function (answers) {
-      return true
+    when: function () {
+      return true;
     },
-    validate: function (value) {
+    validate: function (value, answersData) {
       var done = this.async();
-      api = new PimcoreApiClient({
-        url: pimcoreUrl,
-        apiKey: value
-      })
-      try {
-        api.get('classes').end((resp) => {
-          if (resp.body.success == false) {
-            done (resp.body.msg)
-          } else {
-            availablePimcoreClassess = resp.body.data
-            done(null, true)
-          }
-        })
-      } catch (err) {
-        console.error(err)
-        done('Please provide valid URL and API Key for Pimcore')
+
+      answers.validateApi({
+        answers: answersData, 
+        currentAnswer: value, 
+        doneCallback: done
+      });
+
+      // // TODO: Verify which selected backend, and instantiate the correct object (factory)
+      // debugger;
+      // if (answers.eCommerceBackend.toLowerCase() == 'woocommerce') {
+      //   api = new WoocommerceApiClient({
+      //     url: apiUrl,
+      //     consumerKey: value,
+      //     consumerSecret: "ZZZZZZZZZZZ",
+      //     version: "wc/v2"
+      //   });
+      // } else {
+      //   api = new PimcoreApiClient({
+      //     url: apiUrl,
+      //     apiKey: value
+      //   });
+      // }
+
+      // try {
+      //   api.get('classes').then((resp) => {
+      //     if (resp.body.success == false) {
+      //       done (resp.body.msg)
+      //     } else {
+      //       availablePimcoreClassess = resp.body.data
+      //       done(null, true)
+      //     }
+      //   }).catch((resp) => {
+      //     if (resp.errno == 'ECONNREFUSED') {
+      //       console.error('FATAL ERROR');
+      //       done('Shiiiiit Woorpress!!');
+      //     }
+      //   })
+      // } catch (err) {
+      //   console.error(err)
+      //   done('Please provide valid URL and API Key for Pimcore')
+      // }
+    }
+  },
+  {
+    type: 'input',
+    name: 'consumerSecret',
+    message: 'Please provide valid Consumer Secret Key',
+    default: '',
+    when: function (answers) {
+      return answers.eCommerceBackend.toLowerCase() === 'woocommerce' && answers.apiKey;
+    },
+    validate: function (value, answersData) {
+      var done = this.async();
+
+      if (answers && answers.api) {
+        answers.api.client.consumerSecret = value;
+        answers.requestApi(answersData, done);
+      }else {
+        done(null, true);
       }
     }
-  },  
+  },
   {
     type: 'input',
     name: 'elasticsearchUrl',
@@ -306,10 +370,10 @@ let questions = [
     default: 'http://localhost:9200',
     filter: urlFilter,
     when: function (answers) {
-        return true
+        return true;
     },
     validate: function (value) {
-      return true
+      return true;
     }
   },
   {
@@ -318,10 +382,10 @@ let questions = [
     message: 'Please provide the Elastic Search index name for vue-storefront',
     default: 'vue_storefront_pimcore',
     when: function (answers) {
-      return true
+      return true;
     },
     validate: function (value) {
-      return true
+      return true;
     }
   },
   {
@@ -330,10 +394,10 @@ let questions = [
     message: 'Please the root product category ID of Pimcore',
     default: '11148',
     when: function (answers) {
-      return true
+      return true;
     },
     validate: function (value) {
-      return (Number.isInteger(parseInt(value)))
+      return (Number.isInteger(parseInt(value)));
     }
   },  
   {
@@ -342,10 +406,10 @@ let questions = [
     message: 'Enter the assets path. Pimcore images will be downloaded in here:',
     default: path.normalize(__dirname + '/var/assets'),
     when: function (answers) {
-      return true
+      return true;
     },
     validate: function (value) {
-      return true
+      return true;
     }
   },  
   {
@@ -355,41 +419,41 @@ let questions = [
     default: 'en_GB',
     choices: ['en_GB', 'de_AT', 'de_DE', 'pl_PL', 'fr_FR', 'en_US'],
     when: function (answers) {
-        return true
+        return true;
     },
     validate: function (value) {
-      return true
+      return true;
     }
   },  
   {
     type: 'list',
-    choices: function(answers) { return availablePimcoreClassess.map((itm) => { return itm.name }) },
+    choices: function(answers) { return availablePimcoreClassess.map((itm) => { return itm.name; }); },
     
     name: 'productClass',
     message: 'Please select valid Pimcore class for Product entities',
     default: 'Product',
     when: function (answers) {
-      return true
+      return true;
     },
     validate: function (value) {
-      return true
+      return true;
     }
   },
   {
     type: 'list',
-    choices: function(answers) { return availablePimcoreClassess.map((itm) => { return itm.name }) },
+    choices: function(answers) { return availablePimcoreClassess.map((itm) => { return itm.name; }); },
     
     name: 'categoryClass',
     message: 'Please select valid Pimcore class for Category entities',
     default: 'ProductCategory',
     when: function (answers) {
-      return true
+      return true;
     },
     validate: function (value) {
-      return true
+      return true;
     }
   },  
-]
+];
 
 process.on('unhandledRejection', (reason, p) => {
   console.error('Unhandled Rejection at: Promise', p, 'reason:', reason);
@@ -399,33 +463,33 @@ process.on('unhandledRejection', (reason, p) => {
 /**
  * Predefine class static variables
  */
-Abstract.logsWereCreated = false
-Abstract.infoLogStream = '/dev/null'
-Abstract.logStream = '/dev/null'
+Abstract.logsWereCreated = false;
+Abstract.infoLogStream = '/dev/null';
+Abstract.logStream = '/dev/null';
 
 if (require.main.filename === __filename) {
   /**
    * Pre-loading staff
    */
-  Manager.checkUserOS()
-  Manager.showWelcomeMessage()
+  Manager.checkUserOS();
+  Manager.showWelcomeMessage();
 
   /**
    * This is where all the magic happens
    */
   inquirer.prompt(questions).then(async function (answers) {
-    let manager = new Manager(answers)
+    let manager = new Manager(answers);
 
     await manager.tryToCreateLogFiles()
       .then(manager.initPimcore.bind(manager))
       .then(manager.showGoodbyeMessage.bind(manager))
-      .catch(Message.error)
+      .catch(Message.error);
 
-    shell.exit(0)
-  })
+    shell.exit(0);
+  });
 } else {
-  module.exports.Message = Message
-  module.exports.Manager = Manager
-  module.exports.Abstract = Abstract
-  module.exports.TARGET_CONFIG_FILE = TARGET_CONFIG_FILE
+  module.exports.Message = Message;
+  module.exports.Manager = Manager;
+  module.exports.Abstract = Abstract;
+  module.exports.TARGET_CONFIG_FILE = TARGET_CONFIG_FILE;
 }
